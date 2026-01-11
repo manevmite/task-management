@@ -285,9 +285,3 @@ Potential additions for bonus points:
 - Task categories/tags
 - User profile management
 - Task sharing and collaboration
-
-## Contact
-
-For questions or support, please open an issue in the repository.
- 
- 
