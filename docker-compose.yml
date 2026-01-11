@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: task-management-api
+    ports:
+      - "5000:80"
+      - "5001:443"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:80
+      - ConnectionStrings__DefaultConnection=Data Source=/app/data/taskmanagement.db
+    volumes:
+      - ./backend/data:/app/data
+    networks:
+      - task-management-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: task-management-frontend
+    ports:
+      - "30001:80"
+    depends_on:
+      - backend
+    environment:
+      - REACT_APP_API_URL=https://localhost:5001/api
+    networks:
+      - task-management-network
+
+networks:
+  task-management-network:
+    driver: bridge
+

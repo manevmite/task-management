@@ -1,0 +1,134 @@
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+using TaskManagement.API.DTOs.Auth;
+using TaskManagement.API.Models;
+using TaskManagement.API.Repositories;
+
+namespace TaskManagement.API.Services;
+
+/// <summary>
+/// Service implementation for authentication and authorization
+/// </summary>
+public class AuthService : IAuthService
+{
+    private readonly IUserRepository _userRepository;
+    private readonly IConfiguration _configuration;
+
+    public AuthService(IUserRepository userRepository, IConfiguration configuration)
+    {
+        _userRepository = userRepository;
+        _configuration = configuration;
+    }
+
+    public async System.Threading.Tasks.Task<AuthResponse?> RegisterAsync(RegisterRequest request)
+    {
+        if (await _userRepository.UserExistsAsync(request.Email))
+        {
+            return null; // User already exists
+        }
+
+        var passwordHash = HashPassword(request.Password);
+        var user = new User
+        {
+            Email = request.Email,
+            PasswordHash = passwordHash
+        };
+
+        var createdUser = await _userRepository.CreateAsync(user);
+        var token = GenerateJwtToken(createdUser);
+
+        return new AuthResponse
+        {
+            Token = token,
+            Email = createdUser.Email
+        };
+    }
+
+    public async System.Threading.Tasks.Task<AuthResponse?> LoginAsync(LoginRequest request)
+    {
+        var user = await _userRepository.GetByEmailAsync(request.Email);
+        if (user == null || !VerifyPassword(request.Password, user.PasswordHash))
+        {
+            return null; // Invalid credentials
+        }
+
+        var token = GenerateJwtToken(user);
+
+        return new AuthResponse
+        {
+            Token = token,
+            Email = user.Email
+        };
+    }
+
+    public int GetUserIdFromToken(string token)
+    {
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var key = Encoding.UTF8.GetBytes(_configuration["JwtSettings:SecretKey"]);
+
+        var principal = tokenHandler.ValidateToken(token, new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(key),
+            ValidateIssuer = true,
+            ValidIssuer = _configuration["JwtSettings:Issuer"] ?? "TaskManagementAPI",
+            ValidateAudience = true,
+            ValidAudience = _configuration["JwtSettings:Audience"] ?? "TaskManagementClient",
+            ValidateLifetime = false // We're already validating lifetime in middleware
+        }, out SecurityToken validatedToken);
+
+        var userIdClaim = principal.FindFirst(ClaimTypes.NameIdentifier);
+        if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out var userId))
+        {
+            throw new UnauthorizedAccessException("Invalid token");
+        }
+
+        return userId;
+    }
+
+    private string GenerateJwtToken(User user)
+    {
+        var jwtSettings = _configuration.GetSection("JwtSettings");
+        var secretKey = jwtSettings["SecretKey"];
+        var key = Encoding.UTF8.GetBytes(secretKey);
+        var expirationMinutes = int.Parse(jwtSettings["ExpirationInMinutes"] ?? "60");
+
+        var claims = new List<Claim>
+        {
+            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new Claim(ClaimTypes.Email, user.Email)
+        };
+
+        var tokenDescriptor = new SecurityTokenDescriptor
+        {
+            Subject = new ClaimsIdentity(claims),
+            Expires = DateTime.UtcNow.AddMinutes(expirationMinutes),
+            Issuer = jwtSettings["Issuer"] ?? "TaskManagementAPI",
+            Audience = jwtSettings["Audience"] ?? "TaskManagementClient",
+            SigningCredentials = new SigningCredentials(
+                new SymmetricSecurityKey(key),
+                SecurityAlgorithms.HmacSha256Signature)
+        };
+
+        var tokenHandler = new JwtSecurityTokenHandler();
+        var token = tokenHandler.CreateToken(tokenDescriptor);
+        return tokenHandler.WriteToken(token);
+    }
+
+    private static string HashPassword(string password)
+    {
+        using var sha256 = SHA256.Create();
+        var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
+        return Convert.ToBase64String(hashedBytes);
+    }
+
+    private static bool VerifyPassword(string password, string passwordHash)
+    {
+        var hashOfInput = HashPassword(password);
+        return hashOfInput == passwordHash;
+    }
+}
+
