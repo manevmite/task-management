@@ -1,6 +1,6 @@
 # Task Management System
 
-A full-stack Task Management System built with .NET 8 Web API backend and React frontend. This application allows users to create, view, update, and delete tasks with features like task filtering, completion status, and user authentication.
+A full-stack Task Management System built with .NET 9 Web API backend and React frontend. This application allows users to create, view, update, and delete tasks with features like task filtering, completion status, and user authentication.
 
 ## Features
 
@@ -285,3 +285,4 @@ Potential additions for bonus points:
 - Task categories/tags
 - User profile management
 - Task sharing and collaboration
+
